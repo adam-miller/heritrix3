@@ -86,22 +86,18 @@
 		<div class="button-bar show-for-medium-up">
 			<form method='POST'>
 				<ul class=" button-group">
-						<li><button class="small button" type='submit' name='action' value='build' <#if job.hasApplicationContext> disabled='disabled' </#if>>build</button></li>
+						<li><button class="small button" type='submit' name='action' value='build' ${(!job.hasApplicationContext)?string("", "disabled=\"disabled\"")}>build</button></li>
 						<li><button class="small button" type='submit' name='action' value='launch' 
-					<#if job.isProfile> disabled='disabled' title='profiles cannot be launched'
-					</#if>
-					<#if !job.availableActions?seq_contains("launch")>
-					 disabled='disabled'
-					</#if>
-					 >launch</button></li>
+					<#if job.isProfile> disabled='disabled' title='profiles cannot be launched'</#if>
+					${job.availableActions?seq_contains("launch")?string("","disabled=\"disabled\"")}>launch</button></li>
 					</ul>
 					<ul class=" button-group">
-						<li><button class="small button" <#if !job.availableActions?seq_contains("pause")> disabled</#if> type='submit' name='action' value='pause'>pause</button></li>
-						<li><button class="small button" <#if !job.availableActions?seq_contains("unpause")> disabled</#if> type='submit' name='action' value='unpause'>unpause</button></li>
-						<li><button class="small button" <#if !job.isRunning> disabled</#if>  type='submit' name='action' value='checkpoint'>checkpoint</button></li>
+						<li><button class="small button" ${job.availableActions?seq_contains("pause")?string("", "disabled=\"disabled\"")} type='submit' name='action' value='pause'>pause</button></li>
+						<li><button class="small button" ${job.availableActions?seq_contains("unpause")?string("", "disabled=\"disabled\"")} type='submit' name='action' value='unpause'>unpause</button></li>
+						<li><button class="small button" ${job.isRunning?string("", "disabled=\"disabled\"")} type='submit' name='action' value='checkpoint'>checkpoint</button></li>
 					</ul>
 					<ul class=" button-group">
-						<li><button class="small button" <#if !job.isRunning> disabled</#if> type='submit' name='action' value='terminate'>terminate</button></li>
+						<li><button class="small button" ${job.isRunning?string("", "disabled=\"disabled\"")} type='submit' name='action' value='terminate'>terminate</button></li>
 						<li><button class="small button" type='submit' name='action' value='teardown' <#if !job.hasApplicationContext> disabled='disabled' title='no instance'</#if>>teardown</button></li>
 				</ul>
 			</form>
