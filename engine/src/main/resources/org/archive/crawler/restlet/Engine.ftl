@@ -139,30 +139,35 @@
 				<div class="panel">
 					<p>This exits the Java process running Heritrix. To restart 
 					will then require access to the hosting machine. You should 
-					cleanly terminate and teardown any jobs in progress first.<p>
+					cleanly terminate and teardown any jobs in progress first.</p>
+					<hr />
 					<form method='POST'>
-					<#list engine.jobs as crawlJob>
-					<#if crawlJob.hasApplicationContext>
-						<h6>Job ${crawlJob.key} still &laquo; ${crawlJob.statusDescription} &raquo;</h6>
-						<label for='ignore__${crawlJob.key}'>
-							<input type='checkbox' id="ignore__${crawlJob.key}" name='ignore__${crawlJob.key}'> Ignore job '${crawlJob.key}' and exit anyway
-						</label>
-					</#if>
-					</#list>
-
-
-					<div class="row">
-						<div class="small-6">
-							<div class="small-4 columns">
+						<ul class="no-bullet">
+							<#list engine.jobs as crawlJob>
+							<#if crawlJob.hasApplicationContext>
+							<li>
+								<h6>Job ${crawlJob.key} still &laquo; ${crawlJob.statusDescription} &raquo;</h6>
+								<ul class="no-bullet">
+									<li>
+										<label for='ignore__${crawlJob.key}'>
+											<input type='checkbox' id="ignore__${crawlJob.key}" name='ignore__${crawlJob.key}'> Ignore job '${crawlJob.key}' and exit anyway
+										</label>
+									</li>
+								</ul>
+							</li>
+							</#if>
+							</#list>
+							<li>
 								<input type='submit' name='action' value='Exit Java Process'>
-							</div>
-							<div class="small-8 columns"">
-								<label for='im_sure'>
-									<input class="inline" type='checkbox' name='im_sure' id='im_sure'> I'm sure
-								</label>
-							</div>
-						</div>
-					</div>
+								<ul class="no-bullet">
+									<li>
+										<label for='im_sure'>
+											<input class="inline" type='checkbox' name='im_sure' id='im_sure'> I'm sure
+										</label>
+									</li>
+								</ul>
+							</li>
+						</ul>
 					</form>
 				</div>
 			</div>
