@@ -65,8 +65,7 @@
 <div class="row">
 	<form method='POST'>
 	<div class="large-12 columns">
-				<h2>Job Directories</h2>
-		</div>
+		<h2>Job Directories</h2>
 		<div class="row">
 			<div class="large-12 columns">
 				<div class="panel">

@@ -43,7 +43,7 @@
 					<li class="divider"></li>
 					<li><a href="/engine">Engine</a></li>
 					<li class="divider"></li>
-					<li><a href="jobdir">Job Dir</a></li>
+					<li><a href="/engine/job/${model.crawlJobShortName}">Job "${model.crawlJobShortName}"</a></li>
 					<li class="divider"></li>
 				</ul>
 			</section>
@@ -75,16 +75,39 @@
 							</pre>
 						</fieldset>
 						</#if>
-					
 						<form method="POST">
-							<input type="submit" value="execute">
-							<select name="engine" id="selectEngine">
-								<#list model.availableScriptEngines as scriptEngine>
-								<option<#if selectedEngine=scriptEngine.engine> selected='selected'</#if> value='${scriptEngine.engine}'>${scriptEngine.language}</option>
-								</#list>
-							</select>
-							<textarea rows='20' style='width:100%' name='script' id='editor'>${script}</textarea>
-							<input type='submit' value='execute'></input>
+							<div class="row">
+								<div class="small-4 columns">
+									<div class="row">
+										<div class="small-5 columns">
+											<label class="inline" for="engine">Script Engine: </label>
+										</div>
+										<div class="small-7 columns ">
+											<select name="engine" id="selectEngine">
+												<#list model.availableScriptEngines as scriptEngine>
+												<option<#if selectedEngine=scriptEngine.engine> selected='selected'</#if> value='${scriptEngine.engine}'>${scriptEngine.language}</option>
+												</#list>
+											</select>
+										</div>
+									</div>
+								</div>
+							</div>
+							
+							<div class="row">
+								<div class="large-1 columns left">
+									<input type="submit" value="execute">
+								</div>
+							</div>
+							<div class="row">
+								<div class="small-12 columns">
+									<textarea rows='20' style='width:100%' name='script' id='editor'>${script}</textarea>
+								</div>
+							</div>
+							<div class="row">
+								<div class="large-1 columns left">
+									<input type="submit" value="execute">
+								</div>
+							</div>
 						</form>
 					</div>
 				</div>
@@ -92,31 +115,34 @@
 		</div>
 	</div>
 
-			<div class="row">
-				<div class="large-12 columns">
+	<div class="row">
+		<div class="small-9 columns">
 					The script will be executed in an engine preloaded
 					with (global) variables:
+			<div class="row">
+				<div class="small-11 small-offset-1 columns">
 					<ul>
-					<li><code>rawOut</code>: a PrintWriter for arbitrary text output to this page</li>
-					<li><code>htmlOut</code>: a PrintWriter for HTML output to this page</li>
-					<li><code>job</code>: the current CrawlJob instance</li>
-					<li><code>appCtx</code>: current job ApplicationContext, if any</li>
-					<li><code>scriptResource</code>: the ScriptResource implementing this page, which offers utility methods</li>
+						<li><code>rawOut</code>: a PrintWriter for arbitrary text output to this page</li>
+						<li><code>htmlOut</code>: a PrintWriter for HTML output to this page</li>
+						<li><code>job</code>: the current CrawlJob instance</li>
+						<li><code>appCtx</code>: current job ApplicationContext, if any</li>
+						<li><code>scriptResource</code>: the ScriptResource implementing this page, which offers utility methods</li>
 					</ul>
-					<script>
-						var modemap = {beanshell: 'text/x-java', groovy: 'groovy', js: 'javascript'};
-						var selectEngine = document.getElementById('selectEngine');
-						var editor = document.getElementById('editor');
-						var cmopts = {
-							    mode: modemap[selectEngine.value],
-						        lineNumbers: true, autofocus: true, indentUnit: 4
-							    }
-						var cm = CodeMirror.fromTextArea(editor, cmopts);
-						selectEngine.onchange = function(e) { cm.setOption('mode', modemap[selectEngine.value]); }
-					</script>
 				</div>
 			</div>
-
+		</div>
+	</div>
+<script>
+	var modemap = {beanshell: 'text/x-java', groovy: 'groovy', js: 'javascript'};
+	var selectEngine = document.getElementById('selectEngine');
+	var editor = document.getElementById('editor');
+	var cmopts = {
+		    mode: modemap[selectEngine.value],
+	        lineNumbers: true, autofocus: true, indentUnit: 4
+		    }
+	var cm = CodeMirror.fromTextArea(editor, cmopts);
+	selectEngine.onchange = function(e) { cm.setOption('mode', modemap[selectEngine.value]); }
+</script>
 
 
 
