@@ -122,8 +122,8 @@
 		</#list>
 		<#if job.isProfile>
 		<p>
-			As a <i>profile</i>, this job may be built for testing purposes but not launched. Use the 'copy job to' 
-			functionality at bottom to copy this profile to a launchable job.
+			As a <i>profile</i>, this job may be built for testing purposes but not launched. Use the 'copy job' 
+			functionality in the menu to copy this profile to a launchable job.
 		</p>
 	</#if>
 	</div>
