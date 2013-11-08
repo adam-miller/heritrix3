@@ -4,11 +4,12 @@
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width" />
 	<link rel="stylesheet" href="/engine/static/css/normalize.css" />
-	<link rel="stylesheet" href="/engine/static/css/foundation.css" />
+	<link rel="stylesheet" href="/engine/static/css/foundation.min.css" />
+	<link rel="stylesheet" href="/engine/static/css/heritrix.css" />
 	<script src="/engine/static/js/vendor/custom.modernizr.js"></script>
 	
 	<title>Crawl beans in ${model.crawlJobShortName}</title>
-	<link rel="stylesheet" type="text/css" href="${cssRef}">
+	
 </head>
 <body>
 	<div class="contain-to-grid">

@@ -5,12 +5,13 @@
 	<meta charset="utf-8" />
   	<meta name="viewport" content="width=device-width" />
  	<link rel="stylesheet" href="/engine/static/css/normalize.css" />
-  	<link rel="stylesheet" href="/engine/static/css/foundation.css" />
+  	<link rel="stylesheet" href="/engine/static/css/foundation.min.css" />
+  	<link rel="stylesheet" href="/engine/static/css/heritrix.css" />
   	<script src="/engine/static/js/vendor/custom.modernizr.js"></script>
   
 	<title>${job.shortName} - ${job.statusDescription} - Job main page</title>
 	<base href='${baseRef}'/>
-	<link rel="stylesheet" type="text/css" href="${cssRef}">
+	
 </head>
 <body>
 <form method='POST'>

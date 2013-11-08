@@ -3846,25 +3846,3 @@ table {
     overflow:auto;
     white-space:nowrap;
   }
-  fieldset table.beans {
-  	display: inline;
-  	table-layout: fixed;
-  	width: 100%;
-  	border:none;
-  }
-  fieldset table.beans tbody {
-  	border: solid 1px #dddddd;
-  }
-  fieldset table.beans tbody td {
-  	word-wrap:break-word;
-  }
-  fieldset table.beans tbody tr {
-  	text-align:right;
-  	vertical-align:top
-  }
-    fieldset table.beans tbody td {
-  	text-align:left;
-  }
-  div.panel ul {
-  	margin-left: 1.25em;
-  }

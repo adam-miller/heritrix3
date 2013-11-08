@@ -6,11 +6,12 @@
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width" />
 	<link rel="stylesheet" href="/engine/static/css/normalize.css" />
-	<link rel="stylesheet" href="/engine/static/css/foundation.css" />
+	<link rel="stylesheet" href="/engine/static/css/foundation.min.css" />
+	<link rel="stylesheet" href="/engine/static/css/heritrix.css" />
 	<script src="/engine/static/js/vendor/custom.modernizr.js"></script>
 	
 	<title>Script in ${model.crawlJobShortName}</title>
-	<link rel="stylesheet" type="text/css" href="${cssRef}">
+	
 	<link rel='stylesheet' href='/engine/static/codemirror/codemirror.css'>
 	<link rel='stylesheet' href='/engine/static/codemirror/util/dialog.css'>
 	<script src='/engine/static/codemirror/codemirror.js'></script>
