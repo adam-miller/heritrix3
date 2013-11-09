@@ -117,17 +117,15 @@ public class ExtractorHTMLForms extends Extractor {
     protected boolean shouldProcess(CrawlURI uri) {
         return uri.containsDataKey(ExtractorHTML.A_FORM_OFFSETS);
     }
-    
+
     public void extract(CrawlURI curi) {
         try {
             ReplayCharSequence cs = curi.getRecorder().getContentReplayCharSequence();
-           // Extract all links from the charsequence
-           analyze(curi, cs);
-           // Set flag to indicate that link extraction is completed.
+            analyze(curi, cs);
         } catch (IOException e) {
             curi.getNonFatalFailures().add(e);
             logger.log(Level.WARNING,"Failed get of replay char sequence in " +
-                Thread.currentThread().getName(), e);
+                    Thread.currentThread().getName(), e);
         }
     }
 
@@ -145,22 +143,19 @@ public class ExtractorHTMLForms extends Extractor {
         for (Object offset : curi.getDataList(ExtractorHTML.A_FORM_OFFSETS)) {
             int offsetInt = (Integer) offset;
             CharSequence relevantSequence = cs.subSequence(offsetInt, cs.length());
-            String method = findAttributeValueGroup("(?i)[^>]*\\smethod=([^>\\s]+)[^>]*?>",1,relevantSequence);
-            String action = findAttributeValueGroup("(?i)[^>]*\\saction=([^>\\s]+)[^>]*?>",1,relevantSequence);
+            String method = findAttributeValueGroup("(?i)^[^>]*\\smethod\\s*=\\s*([^>\\s]+)[^>]*>",1,relevantSequence);
+            String action = findAttributeValueGroup("(?i)^[^>]*\\saction\\s*=\\s*([^>\\s]+)[^>]*>",1,relevantSequence);
             HTMLForm form = new HTMLForm();
             form.setMethod(method);
             form.setAction(action); 
             for(CharSequence input : findGroups("(?i)(<input\\s[^>]*>)|(</?form>)",1,relevantSequence)) {
-                String type = findAttributeValueGroup("(?i)[^>]*\\stype=([^>\\s]+)[^>]*?>",1,input);
-                String name = findAttributeValueGroup("(?i)[^>]*\\sname=([^>\\s]+)[^>]*?>",1,input);
-                String value = findAttributeValueGroup("(?i)[^>]*\\svalue=([^>\\s]+)[^>]*?>",1,input);
+                String type = findAttributeValueGroup("(?i)^[^>]*\\stype\\s*=\\s*([^>\\s]+)[^>]*>",1,input);
+                String name = findAttributeValueGroup("(?i)^[^>]*\\sname\\s*=\\s*([^>\\s]+)[^>]*>",1,input);
+                String value = findAttributeValueGroup("(?i)^[^>]*\\svalue\\s*=\\s*([^>\\s]+)[^>]*>",1,input);
                 form.addField(type,name,value);
             }
             if (form.seemsLoginForm() || getExtractAllForms()) {
                 curi.getDataList(A_HTML_FORM_OBJECTS).add(form);
-                // DEBUG output
-                // System.err.println("FORM AT ("+curi.getURI()+"): ");
-                // System.err.println(form.toString());
                 curi.getAnnotations().add(form.asAnnotation());
             }
         }
@@ -188,7 +183,16 @@ public class ExtractorHTMLForms extends Extractor {
         Matcher m = TextUtils.getMatcher(pattern, cs);
         try {
             if(m.find()) {
-                return StringUtils.strip(m.group(groupNumber),"\'\""); // strip quotes if present
+                String value = m.group(groupNumber);
+                /*
+                 * In a case like this <input name="foo"/> the group here will
+                 * be "foo"/ ... it's difficult to adjust the regex to avoid
+                 * slurping that trailing slash, so handle it here
+                 */
+                value = StringUtils.removeEnd(value, "'/");
+                value = StringUtils.removeEnd(value, "\"/");
+                value = StringUtils.strip(value, "\'\""); // strip quotes if present
+                return value;
             } else {
                 return null; 
             }

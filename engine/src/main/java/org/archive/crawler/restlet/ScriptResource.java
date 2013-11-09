@@ -19,10 +19,7 @@
 
 package org.archive.crawler.restlet;
 
-import java.io.File;
 import java.io.IOException;
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.io.Writer;
 import java.util.Collection;
 import java.util.Collections;
@@ -32,20 +29,13 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
-import javax.script.Bindings;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineFactory;
 import javax.script.ScriptEngineManager;
-import javax.script.ScriptException;
 
-import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.commons.lang.StringUtils;
-import org.archive.crawler.framework.BeanLookupBindings;
-import org.archive.crawler.restlet.models.CrawlJobModel;
-import org.archive.crawler.restlet.models.EngineModel;
 import org.archive.crawler.restlet.models.ScriptModel;
 import org.archive.crawler.restlet.models.ViewModel;
-import org.archive.util.TextUtils;
 import org.restlet.Context;
 import org.restlet.data.CharacterSet;
 import org.restlet.data.Form;
@@ -57,7 +47,6 @@ import org.restlet.resource.Representation;
 import org.restlet.resource.ResourceException;
 import org.restlet.resource.Variant;
 import org.restlet.resource.WriterRepresentation;
-import org.springframework.context.ApplicationContext;
 
 import freemarker.template.Configuration;
 import freemarker.template.ObjectWrapper;
@@ -89,11 +78,7 @@ public class ScriptResource extends JobRelatedResource {
             }
         });
     }
-    protected String script = "";
-    protected Exception ex = null;
-    protected int linesExecuted = 0; 
-    protected String rawOutput = ""; 
-    protected String htmlOutput = "";
+    
     protected String chosenEngine = FACTORIES.isEmpty() ? "" : FACTORIES.getFirst().getNames().get(0);
     private Configuration _templateConfiguration;
     
@@ -107,6 +92,8 @@ public class ScriptResource extends JobRelatedResource {
         tmpltCfg.setClassForTemplateLoading(this.getClass(),"");
         tmpltCfg.setObjectWrapper(ObjectWrapper.BEANS_WRAPPER);
         setTemplateConfiguration(tmpltCfg);
+        
+        scriptingConsole = new ScriptingConsole(cj);
     }
     public void setTemplateConfiguration(Configuration tmpltCfg) {
         _templateConfiguration=tmpltCfg;
@@ -114,49 +101,24 @@ public class ScriptResource extends JobRelatedResource {
     public Configuration getTemplateConfiguration(){
         return _templateConfiguration;
     }
+        
+    private ScriptingConsole scriptingConsole;
     
     @Override
     public void acceptRepresentation(Representation entity) throws ResourceException {
         Form form = getRequest().getEntityAsForm();
         chosenEngine = form.getFirstValue("engine");
-        script = form.getFirstValue("script");
+        String script = form.getFirstValue("script");
         if(StringUtils.isBlank(script)) {
             script="";
         }
 
         ScriptEngine eng = MANAGER.getEngineByName(chosenEngine);
         
-        StringWriter rawString = new StringWriter(); 
-        PrintWriter rawOut = new PrintWriter(rawString);
-        ApplicationContext appCtx = cj.getJobContext();
-        Bindings bindings = new BeanLookupBindings(appCtx);
-        bindings.put("rawOut", rawOut);
-        StringWriter htmlString = new StringWriter(); 
-        PrintWriter htmlOut = new PrintWriter(htmlString);
-        bindings.put("htmlOut", htmlOut);
-        bindings.put("job", cj);
-        bindings.put("appCtx", appCtx);
-        bindings.put("scriptResource", this);
-        try {
-            eng.eval(script, bindings);
-            linesExecuted = script.split("\r?\n").length;
-        } catch (ScriptException e) {
-            ex = e;
-        } catch (RuntimeException e) {
-            ex = e;
-        } finally {
-            rawOut.flush();
-            rawOutput = rawString.toString();
-            htmlOut.flush();
-            htmlOutput = htmlString.toString();
-
-            // the script could create an object that persists and retains a reference to the Bindings
-            bindings.put("rawOut", null);
-            bindings.put("htmlOut", null);
-            bindings.put("job", null);
-            bindings.put("appCtx", null);
-            bindings.put("scriptResource", null);
-        }
+        scriptingConsole.bind("scriptResource",  this);
+        scriptingConsole.execute(eng, script);
+        scriptingConsole.unbind("scriptResource");
+        
         //TODO: log script, results somewhere; job log INFO? 
         
         getResponse().setEntity(represent());
@@ -208,13 +170,9 @@ public class ScriptResource extends JobRelatedResource {
         }
         Reference baseRefRef = new Reference(baseRef);
         
-        ScriptModel model = new ScriptModel(cj.getShortName(),
+        ScriptModel model = new ScriptModel(scriptingConsole,
                 new Reference(baseRefRef, "..").getTargetRef().toString(),
-                getAvailableScriptEngines(),
-                linesExecuted,
-                ex,
-                rawOutput,
-                htmlOutput);
+                getAvailableScriptEngines());
 
         return model;
     }
@@ -233,9 +191,8 @@ public class ScriptResource extends JobRelatedResource {
         viewModel.put("cssRef", getStylesheetRef());
         viewModel.put("staticRef", getStaticRef(""));
         viewModel.put("baseResourceRef",getRequest().getRootRef().toString()+"/engine/static/");
-        viewModel.put("model",makeDataModel());
+        viewModel.put("model", makeDataModel());
         viewModel.put("selectedEngine", chosenEngine);
-        viewModel.put("script", script);
 
         try {
             Template template = tmpltCfg.getTemplate("Script.ftl");

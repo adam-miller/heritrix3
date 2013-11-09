@@ -1649,6 +1649,9 @@ implements Reporter, Serializable, OverlayContext {
                 extendHopsPath(getPathFromSeed(),link.getHopType().getHopChar()),
                 getUURI(), link.getContext());
         newCaURI.inheritFrom(this);
+        if (link.hasData()) {
+            newCaURI.data = link.getData();
+        }
         return newCaURI;
     }
 
