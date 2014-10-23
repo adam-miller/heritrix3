@@ -98,6 +98,10 @@ public class ExtractorHTTP extends Extractor {
             LinkContext lc = HTMLLinkContext.get(headerName+":");
             addOutlink(curi, dest.toString(), lc, Hop.REFER);
             numberOfLinksExtracted.incrementAndGet();
+            
+            if(curi.isSeed() && (curi.getFetchStatus()==301 || curi.getFetchStatus() == 302) && "location".equalsIgnoreCase(headerName)) {
+                curi.getData().put("SeedRedirect", dest.toString());
+            }
         } catch (URIException e) {
             logUriError(e, curi.getUURI(), url);
         }

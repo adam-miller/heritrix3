@@ -110,11 +110,8 @@ public class SeedRecord implements CoreAttributeConstants, Serializable, Identit
         this.statusCode = curi.getFetchStatus();
         this.disposition = disposition;
         if (statusCode==301 || statusCode == 302) {
-            for (CrawlURI cauri: curi.getOutLinks()) {
-                if("location:".equalsIgnoreCase(cauri.getViaContext().
-                        toString())) {
-                    redirectUri = cauri.toString();
-                }
+            if(curi.getData().containsKey("SeedRedirect")) {
+                redirectUri = curi.getData().get("SeedRedirect").toString();
             }
         } else {
             redirectUri = null; 
