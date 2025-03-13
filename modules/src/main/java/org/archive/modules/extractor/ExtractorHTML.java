@@ -20,16 +20,23 @@
 package org.archive.modules.extractor;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
+import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.Locale;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
+import com.google.common.base.Ascii;
 import org.apache.commons.httpclient.URIException;
+import org.apache.commons.io.IOUtils;
 import org.archive.io.ReplayCharSequence;
 import org.archive.modules.CoreAttributeConstants;
 import org.archive.modules.CrawlMetadata;
@@ -77,6 +84,9 @@ public class ExtractorHTML extends ContentExtractor implements InitializingBean 
     public final static String A_META_ROBOTS = "meta-robots";
     
     public final static String A_FORM_OFFSETS = "form-offsets";
+
+    // As per https://infra.spec.whatwg.org/#ascii-whitespace
+    private final static Pattern ASCII_WHITESPACE = Pattern.compile("[\t\n\f\r ]+");
     
     {
         setMaxElementLength(64); 
@@ -187,9 +197,10 @@ public class ExtractorHTML extends ContentExtractor implements InitializingBean 
     // matched by the above. attributes known to be URIs of various
     // sorts are matched specially
     static final String EACH_ATTRIBUTE_EXTRACTOR =
-      "(?is)\\s?((href)|(action)|(on\\w*)" // 1, 2, 3, 4 
-     +"|((?:src)|(?:srcset)|(?:lowsrc)|(?:background)|(?:cite)" // ...
-     +"|(?:longdesc)|(?:usemap)|(?:profile)|(?:datasrc))" // 5
+      "(?is)\\s?((href|(?:cite))|(action)|(on\\w*)" // 1, 2, 3, 4
+     +"|((?:src)|(?:srcset)|(?:lowsrc)|(?:background)" // ...
+     +"|(?:longdesc)|(?:usemap)|(?:profile)|(?:datasrc)" // ...
+     +"|(?:data-src)|(?:data-srcset)|(?:data-original)|(?:data-original-set))" // 5
      +"|(codebase)|((?:classid)|(?:data))|(archive)|(code)" // 6, 7, 8, 9
      +"|(value)|(style)|(method)" // 10, 11, 12
      +"|([-\\w]{1,"+MAX_ATTR_NAME_REPLACE+"}))" // 13
@@ -199,11 +210,12 @@ public class ExtractorHTML extends ContentExtractor implements InitializingBean 
      +"|(\\S{1,"+MAX_ATTR_VAL_REPLACE+"}))"; // 16
     // groups:
     // 1: attribute name
-    // 2: HREF - single URI relative to doc base, or occasionally javascript:
+    // 2: HREF, CITE - single URI relative to doc base, or occasionally javascript:
     // 3: ACTION - single URI relative to doc base, or occasionally javascript:
     // 4: ON[WHATEVER] - script handler
-    // 5: SRC,SRCSET,LOWSRC,BACKGROUND,CITE,LONGDESC,USEMAP,PROFILE, or DATASRC
-    //    single URI relative to doc base
+    // 5: SRC,SRCSET,LOWSRC,BACKGROUND,LONGDESC,USEMAP,PROFILE, or
+    //    DATA-SRC, DATA-ORIGINAL single URI relative to doc base
+    //    DATA-SRCSET, DATA-ORIGINAL-SET multi URI relative to doc base
     // 6: CODEBASE - a single URI relative to doc base, affecting other
     //    attributes
     // 7: CLASSID, DATA - a single URI relative to CODEBASE (if supplied)
@@ -228,49 +240,55 @@ public class ExtractorHTML extends ContentExtractor implements InitializingBean 
     static final String IFRAME = "iframe";
 
     
-    /**
-     * If true, FRAME/IFRAME SRC-links are treated as embedded resources (like
-     * IMG, 'E' hop-type), otherwise they are treated as navigational links.
-     * Default is true.
-     */
     {
         setTreatFramesAsEmbedLinks(true);
     }
     public boolean getTreatFramesAsEmbedLinks() {
         return (Boolean) kp.get("treatFramesAsEmbedLinks");
     }
+    /**
+     * If true, FRAME/IFRAME SRC-links are treated as embedded resources (like
+     * IMG, 'E' hop-type), otherwise they are treated as navigational links.
+     * Default is true.
+     */
     public void setTreatFramesAsEmbedLinks(boolean asEmbeds) {
         kp.put("treatFramesAsEmbedLinks",asEmbeds);
     }
     
-    /**
-     * If true, URIs appearing as the ACTION attribute in HTML FORMs are
-     * ignored. Default is false.
-     */
     {
         setIgnoreFormActionUrls(false);
     }
     public boolean getIgnoreFormActionUrls() {
         return (Boolean) kp.get("ignoreFormActionUrls");
     }
+    /**
+     * If true, URIs appearing as the ACTION attribute in HTML FORMs are
+     * ignored. Default is false.
+     */
     public void setIgnoreFormActionUrls(boolean ignoreActions) {
         kp.put("ignoreFormActionUrls",ignoreActions);
     }
 
-    /**
-     * If true, only ACTION URIs with a METHOD of GET (explicit or implied)
-     * are extracted. Default is true.
-     */
     {
         setExtractOnlyFormGets(true);
     }
     public boolean getExtractOnlyFormGets() {
         return (Boolean) kp.get("extractOnlyFormGets");
     }
+    /**
+     * If true, only ACTION URIs with a METHOD of GET (explicit or implied)
+     * are extracted. Default is true.
+     */
     public void setExtractOnlyFormGets(boolean onlyGets) {
         kp.put("extractOnlyFormGets",onlyGets);
     }
     
+    {
+        setExtractJavascript(true);
+    }
+    public boolean getExtractJavascript() {
+        return (Boolean) kp.get("extractJavascript");
+    }
     /**
      * If true, in-page Javascript is scanned for strings that
      * appear likely to be URIs. This typically finds both valid
@@ -278,44 +296,51 @@ public class ExtractorHTML extends ContentExtractor implements InitializingBean 
      * sometimes generates webmaster concerns over odd crawler
      * behavior. Default is true.
      */
-    {
-        setExtractJavascript(true);
-    }
-    public boolean getExtractJavascript() {
-        return (Boolean) kp.get("extractJavascript");
-    }
     public void setExtractJavascript(boolean extractJavascript) {
         kp.put("extractJavascript",extractJavascript);
     }    
 
-    /**
-     * If true, strings that look like URIs found in unusual places (such as
-     * form VALUE attributes) will be extracted. This typically finds both valid
-     * and invalid URIs, and attempts to fetch the invalid URIs sometimes
-     * generate webmaster concerns over odd crawler behavior. Default is true.
-     */
     {
         setExtractValueAttributes(true);
     }
     public boolean getExtractValueAttributes() {
         return (Boolean) kp.get("extractValueAttributes");
     }
+    /**
+     * If true, strings that look like URIs found in unusual places (such as
+     * form VALUE attributes) will be extracted. This typically finds both valid
+     * and invalid URIs, and attempts to fetch the invalid URIs sometimes
+     * generate webmaster concerns over odd crawler behavior. Default is true.
+     */
     public void setExtractValueAttributes(boolean extractValueAttributes) {
         kp.put("extractValueAttributes",extractValueAttributes);
     }    
 
-    /**
-     * If true, URIs which end in typical non-HTML extensions (such as .gif)
-     * will not be scanned as if it were HTML. Default is true.
-     */
     {
         setIgnoreUnexpectedHtml(true);
     }
     public boolean getIgnoreUnexpectedHtml() {
         return (Boolean) kp.get("ignoreUnexpectedHtml");
     }
+    /**
+     * If true, URIs which end in typical non-HTML extensions (such as .gif)
+     * will not be scanned as if it were HTML. Default is true.
+     */
     public void setIgnoreUnexpectedHtml(boolean ignoreUnexpectedHtml) {
         kp.put("ignoreUnexpectedHtml",ignoreUnexpectedHtml);
+    }
+
+    {
+        setObeyRelNofollow(false);
+    }
+    public boolean getObeyRelNofollow() {
+        return (Boolean) kp.get("obeyRelNofollow");
+    }
+    /**
+     * If true links containing the "rel=nofollow" directive will not be extracted.
+     */
+    public void setObeyRelNofollow(boolean obeyRelNofollow) {
+        kp.put("obeyRelNofollow", obeyRelNofollow);
     }
     
     /**
@@ -383,7 +408,12 @@ public class ExtractorHTML extends ContentExtractor implements InitializingBean 
         // Just in case it's a VALUE whose interpretation depends on accompanying NAME
         CharSequence valueVal = null; 
         CharSequence valueContext = null;
-        CharSequence nameVal = null; 
+        CharSequence nameVal = null;
+
+        // Just in case it's an A or LINK tag
+        CharSequence linkHref = null;
+        CharSequence linkRel = null;
+        CharSequence linkContext = null;
         
         final boolean framesAsEmbeds = 
             getTreatFramesAsEmbedLinks();
@@ -393,7 +423,7 @@ public class ExtractorHTML extends ContentExtractor implements InitializingBean 
         
         final boolean extractValueAttributes = 
             getExtractValueAttributes();
-        
+
         final String elementStr = element.toString();
 
         while (attr.find()) {
@@ -414,9 +444,14 @@ public class ExtractorHTML extends ContentExtractor implements InitializingBean 
                 } else {
                     context = elementContext(element, attr.group(2));
                 }
+                
 
-                if ("a[data-remote='true']/@href".equals(context) || elementStr.equalsIgnoreCase(LINK)) {
-                    // <LINK> elements treated as embeds (css, ico, etc)
+                if ((elementStr.equalsIgnoreCase(LINK) || elementStr.equalsIgnoreCase("a"))
+                    && linkHref == null) {
+                    // delay handling A and LINK until the end as we need both HREF and REL
+                    linkHref = value;
+                    linkContext = context;
+                } else if ("a[data-remote='true']/@href".equals(context)) {
                     processEmbed(curi, value, context);
                 } else {
                     // other HREFs treated as links
@@ -509,15 +544,36 @@ public class ExtractorHTML extends ContentExtractor implements InitializingBean 
                 method = value;
                 // form processing finished at end (after ACTION also collected)
             } else if (attr.start(13) > -1) {
-                if("NAME".equalsIgnoreCase(attrName.toString())) {
+                if (Ascii.equalsIgnoreCase(attrName, "NAME")) {
                     // remember 'name' for end-analysis
                     nameVal = value; 
-                }
-                if("FLASHVARS".equalsIgnoreCase(attrName.toString())) {
+                } else if (Ascii.equalsIgnoreCase(attrName, "FLASHVARS")) {
                     // consider FLASHVARS attribute immediately
                     valueContext = elementContext(element,attr.group(13));
                     considerQueryStringValues(curi, value, valueContext,Hop.SPECULATIVE);
+                } else if (Ascii.equalsIgnoreCase(attrName, "REL")) {
+                    // remember 'rel' for end-analysis
+                    linkRel = value;
                 }
+
+				// 2023 updates get img or source data attr
+				CharSequence context = elementContext(element, attr.group(13));
+				if (TextUtils.matches(
+						"data-(src|src-small|src-medium|srcset|original|original-set|lazy|lazy-srcset|full-src)", //
+						attr.group(13).toLowerCase())) {
+
+					// true, if we expect another HTML page instead of an image etc.
+					final Hop hop;
+
+					if (!framesAsEmbeds
+							&& (elementStr.equalsIgnoreCase(FRAME) || elementStr.equalsIgnoreCase(IFRAME))) {
+						hop = Hop.NAVLINK;
+					} else {
+						hop = Hop.EMBED;
+					}
+					processEmbed(curi, value, context, hop);
+				}
+
                 // any other attribute
                 // ignore for now
                 // could probe for path- or script-looking strings, but
@@ -554,6 +610,22 @@ public class ExtractorHTML extends ContentExtractor implements InitializingBean 
                     DevUtils.extraInfo(), e);
             }
         }
+
+        // finish handling LINK now both HREF and REL should be available
+        if (linkHref != null) {
+            if (elementStr.equalsIgnoreCase(LINK)) {
+                if (linkRel != null) {
+                    processLinkTagWithRel(curi, linkHref, linkRel);
+                }
+            } else {
+                if (linkRel != null && getObeyRelNofollow()
+                    && TextUtils.matches("(?i).*\\bnofollow\\b.*", linkRel)) {
+                    if (logger.isLoggable(Level.FINEST)) logger.finest("ignoring nofollow link: " + linkHref);
+                } else {
+                    processLink(curi, linkHref, linkContext);
+                }
+            }
+        }
            
         // finish handling form action, now method is available
         if(action != null) {
@@ -577,6 +649,38 @@ public class ExtractorHTML extends ContentExtractor implements InitializingBean 
                     considerIfLikelyUri(curi,valueVal,valueContext,Hop.NAVLINK);
                 }
             }
+        }
+    }
+
+    // see: https://html.spec.whatwg.org/multipage/links.html#linkTypes
+    protected void processLinkTagWithRel(CrawlURI curi, CharSequence href, CharSequence rel) {
+        boolean emitAsNavLink = false;
+        for (String keyword : ASCII_WHITESPACE.split(rel)) {
+            String linkType = keyword.toLowerCase(Locale.ROOT);
+            switch (linkType) {
+                case "icon":
+                case "stylesheet":
+                case "modulepreload":
+                case "prefetch":
+                case "prerender":
+                    // treat as an embedded resource
+                    processEmbed(curi, href, "link[rel='" + linkType + "']/@href");
+                    return;
+                case "pingback":
+                    // don't extract pingbacks
+                    return;
+                case "dns-prefetch":
+                case "preconnect":
+                case "":
+                    // ignore connection hints
+                    break;
+                default:
+                    // treat anything else as a navigation link
+                    emitAsNavLink = true;
+            }
+        }
+        if (emitAsNavLink) {
+            processLink(curi, href, "link/@href");
         }
     }
 
@@ -662,7 +766,7 @@ public class ExtractorHTML extends ContentExtractor implements InitializingBean 
             // ReplayCharSequence.
             HTMLLinkContext hc = HTMLLinkContext.get(context.toString());
             int max = getExtractorParameters().getMaxOutlinks();
-            addRelativeToBase(curi, max, uri.toString(), hc, hop);
+            addRelativeToBase(curi, max, uri, hc, hop);
         } catch (URIException e) {
             logUriError(e, curi.getUURI(), uri);
         }
@@ -680,24 +784,31 @@ public class ExtractorHTML extends ContentExtractor implements InitializingBean 
                 " from " + curi);
         }
 
-        if (context.equals(HTMLLinkContext.IMG_SRCSET.toString()) || context.equals(HTMLLinkContext.SOURCE_SRCSET.toString())) {
-
-            logger.fine("Found srcset listing: " + value.toString());
+		if (context.equals(HTMLLinkContext.IMG_SRCSET.toString())
+				|| context.equals(HTMLLinkContext.IMG_DATA_SRC.toString())
+				|| context.equals(HTMLLinkContext.SOURCE_SRCSET.toString())
+				|| context.equals(HTMLLinkContext.IMG_DATA_SRCSET.toString())
+				|| context.equals(HTMLLinkContext.SOURCE_DATA_SRCSET.toString())
+				|| context.equals(HTMLLinkContext.SOURCE_DATA_LAZY_SRCSET.toString())
+				|| context.equals(HTMLLinkContext.IMG_DATA_LAZY_SRCSET.toString())
+				|| context.equals(HTMLLinkContext.IMG_DATA_SRC_MEDIUM.toString())
+				|| context.equals(HTMLLinkContext.IMG_DATA_SRC_SMALL.toString())
+				|| context.equals(HTMLLinkContext.IMG_DATA_ORIGINAL_SET.toString())
+				|| context.equals(HTMLLinkContext.SOURCE_DATA_ORIGINAL_SET.toString())
+				|| context.equals(HTMLLinkContext.LINK_IMAGESRCSET.toString())) {
+            logger.log(Level.FINE,"Found srcset listing: {0}", value);
 
             Matcher matcher = TextUtils.getMatcher("[\\s,]*(\\S*[^,\\s])(?:\\s(?:[^,(]+|\\([^)]*(?:\\)|$))*)?", value);
             while (matcher.lookingAt()) {
-                String link = matcher.group(1);
+                CharSequence link = value.subSequence(matcher.start(1), matcher.end(1));
                 matcher.region(matcher.end(), matcher.regionEnd());
-                logger.finer("Found " + link + " adding to outlinks.");
+                logger.log(Level.FINER, "Found {0} adding to outlinks.", link);
                 addLinkFromString(curi, link, context, hop);
                 numberOfLinksExtracted.incrementAndGet();
             }
             TextUtils.recycleMatcher(matcher);
         } else {
-            addLinkFromString(curi,
-                (value instanceof String)?
-                    (String)value: value.toString(),
-                context, hop);
+            addLinkFromString(curi, value, context, hop);
             numberOfLinksExtracted.incrementAndGet();
         }
     }
@@ -995,7 +1106,7 @@ public class ExtractorHTML extends ContentExtractor implements InitializingBean 
         else if (content != null) {
             //look for likely urls in 'content' attribute
             try {
-                if (UriUtils.isVeryLikelyUri(content)) {
+                if (UriUtils.isVeryLikelyUri(UriUtils.speculativeFixup(content, curi.getUURI()))) {
                     int max = getExtractorParameters().getMaxOutlinks();
                     addRelativeToBase(curi, max, content, 
                             HTMLLinkContext.META, Hop.SPECULATIVE);                    
@@ -1037,7 +1148,62 @@ public class ExtractorHTML extends ContentExtractor implements InitializingBean 
      * @return CharSequence context
      */
     public static CharSequence elementContext(CharSequence element, CharSequence attribute) {
-        return attribute == null? "": element + "/@" + attribute;
+        return attribute == null? "": (element + "/@" + attribute).toLowerCase(Locale.ROOT);
+    }
+
+    public static void main(String[] args) throws Exception {
+        String url = null;
+        CrawlMetadata metadata = new CrawlMetadata();
+
+        for (int i = 0; i < args.length; i++) {
+            if (!args[i].startsWith("-")) {
+                url = args[i];
+                continue;
+            }
+            switch (args[i]) {
+                case "-h":
+                case "--help":
+                    System.out.println("Usage: ExtractorHTML [options] URL");
+                    System.out.println("Extracts and prints links from the given URL");
+                    System.out.println("");
+                    System.out.println("Options:");
+                    System.out.println("  --robots POLICY    Policy for robots meta tags " +
+                            RobotsPolicy.STANDARD_POLICIES.keySet());
+                    System.exit(0);
+                    break;
+                case "--robots":
+                    metadata.setRobotsPolicyName(args[++i]);
+                    break;
+                default:
+                    System.err.println("ExtractorHTML: Unknown option: " + args[i]);
+                    System.err.println("Try --help for usage information.");
+                    System.exit(1);
+            }
+        }
+
+        if (url == null) {
+            System.err.println("ExtractorHTML: No URL specified.");
+            System.err.println("Try --help for usage information.");
+            System.exit(1);
+        }
+
+        CrawlURI curi = new CrawlURI(UURIFactory.getInstance(url));
+
+        metadata.afterPropertiesSet();
+
+        ExtractorHTML extractor = new ExtractorHTML();
+        extractor.setExtractorJS(new ExtractorJS());
+        extractor.setMetadata(metadata);
+        extractor.afterPropertiesSet();
+
+        String content;
+        try (InputStream stream = new URL(url).openStream()) {
+            content = IOUtils.toString(stream, StandardCharsets.ISO_8859_1);
+        }
+        extractor.extract(curi, content);
+        for (CrawlURI link : curi.getOutLinks()) {
+            System.out.println(link.getURI() + " " + link.getLastHop() + " " + link.getViaContext());
+        }
     }
 }
 

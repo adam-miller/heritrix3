@@ -20,18 +20,26 @@
 package org.archive.crawler.framework;
 
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Semaphore;
 import java.util.logging.FileHandler;
 import java.util.logging.Formatter;
 import java.util.logging.Handler;
@@ -51,6 +59,7 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
 import org.archive.crawler.event.CrawlStateEvent;
 import org.archive.crawler.framework.CrawlController.StopCompleteEvent;
+import org.archive.crawler.frontier.WorkQueue;
 import org.archive.crawler.reporting.AlertThreadGroup;
 import org.archive.crawler.reporting.CrawlStatSnapshot;
 import org.archive.crawler.reporting.StatisticsTracker;
@@ -58,8 +67,8 @@ import org.archive.spring.ConfigPath;
 import org.archive.spring.ConfigPathConfigurer;
 import org.archive.spring.PathSharingContext;
 import org.archive.util.ArchiveUtils;
+import org.archive.util.ObjectIdentityCache;
 import org.archive.util.TextUtils;
-import org.joda.time.DateTime;
 import org.springframework.beans.BeanWrapperImpl;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanCreationException;
@@ -89,10 +98,10 @@ public class CrawlJob implements Comparable<CrawlJob>, ApplicationListener<Appli
     protected PathSharingContext ac; 
     protected int launchCount; 
     protected boolean isLaunchInfoPartial;
-    protected DateTime lastLaunch;
+    protected Instant lastLaunch;
     protected AlertThreadGroup alertThreadGroup;
     
-    protected DateTime xmlOkAt = new DateTime(0L);
+    protected Instant xmlOkAt = Instant.ofEpochMilli(0);
     protected Logger jobLogger;
     
     public CrawlJob(File cxml) {
@@ -145,7 +154,7 @@ public class CrawlJob implements Comparable<CrawlJob>, ApplicationListener<Appli
         return jobLogger;
     }
 
-    public DateTime getLastLaunch() {
+    public Instant getLastLaunch() {
         return lastLaunch;
     }
     public int getLaunchCount() {
@@ -182,7 +191,7 @@ public class CrawlJob implements Comparable<CrawlJob>, ApplicationListener<Appli
                 Matcher m = launchLine.matcher(line);
                 if (m.matches()) {
                     launchCount++;
-                    lastLaunch = new DateTime(m.group(1));
+                    lastLaunch = Instant.parse(m.group(1));
                 }
             }
             jobLogReader.close();
@@ -242,14 +251,20 @@ public class CrawlJob implements Comparable<CrawlJob>, ApplicationListener<Appli
     public void checkXML() {
         // TODO: suppress check if XML unchanged? job.log when XML changed? 
 
-        DateTime testTime = new DateTime(getPrimaryConfig().lastModified());
-        Document doc = getDomDocument(getPrimaryConfig());
+        File primaryConfig = getPrimaryConfig();
+        Instant testTime = Instant.ofEpochMilli(primaryConfig.lastModified());
+        if (primaryConfig.toString().endsWith(".groovy")) {
+            // just assume Groovy configs are OK
+            xmlOkAt = testTime;
+            return;
+        }
+        Document doc = getDomDocument(primaryConfig);
         // TODO: check for other minimal requirements, like
         // presence of a few key components (CrawlController etc.)? 
         if(doc!=null) {
             xmlOkAt = testTime; 
         } else {
-            xmlOkAt = new DateTime(0L);
+            xmlOkAt = Instant.ofEpochMilli(0);
         }
 
     }
@@ -281,7 +296,7 @@ public class CrawlJob implements Comparable<CrawlJob>, ApplicationListener<Appli
      * @return true if the primary configuration file passed XML testing
      */
     public boolean isXmlOk() {
-        return xmlOkAt.getMillis() >= getPrimaryConfig().lastModified();
+        return xmlOkAt.toEpochMilli() >= getPrimaryConfig().lastModified();
     }
     
     
@@ -399,7 +414,7 @@ public class CrawlJob implements Comparable<CrawlJob>, ApplicationListener<Appli
      * (Note the crawl may have been configured to start in a 'paused'
      * state.) 
      */
-    public synchronized void launch() {
+    public void launch() {
         if (isProfile()) {
             throw new IllegalArgumentException("Can't launch profile" + this);
         }
@@ -440,9 +455,8 @@ public class CrawlJob implements Comparable<CrawlJob>, ApplicationListener<Appli
         getJobLogger().log(Level.INFO,"Job launched");
         scanJobLog();
         launcher.start();
-        // look busy (and give startContext/crawlStart a chance)
         try {
-            Thread.sleep(1500);
+            launcher.join();
         } catch (InterruptedException e) {
             // do nothing
         }
@@ -580,7 +594,7 @@ public class CrawlJob implements Comparable<CrawlJob>, ApplicationListener<Appli
             // all this stuff should happen even in case ac.close() bugs out
             ac = null;
             
-            xmlOkAt = new DateTime(0);
+            xmlOkAt = Instant.ofEpochMilli(0);
             
             if (currentLaunchJobLogHandler != null) {
                 getJobLogger().removeHandler(currentLaunchJobLogHandler);
@@ -607,7 +621,7 @@ public class CrawlJob implements Comparable<CrawlJob>, ApplicationListener<Appli
         public String format(LogRecord record) {
             StringBuilder sb = new StringBuilder();
             sb
-              .append(new DateTime(record.getMillis()))
+              .append(Instant.ofEpochMilli(record.getMillis()))
               .append(" ")
               .append(record.getLevel())
               .append(" ")
@@ -963,11 +977,59 @@ public class CrawlJob implements Comparable<CrawlJob>, ApplicationListener<Appli
         if(!hasApplicationContext()) {
             return "Unbuilt";
         } else if(isRunning()) {
+            if (!getCrawlController().isRunning()) {
+                return "Not running: " + 
+			getCrawlController().getCrawlExitStatus();
+            }
             return "Active: "+getCrawlController().getState();
         } else if(isLaunchable()){
             return "Ready";
         } else {
             return "Finished: "+getCrawlController().getCrawlExitStatus();
         }
+    }
+
+    protected Semaphore exportLock = new Semaphore(1);
+
+    public long exportPendingUris() {
+        CrawlController cc = getCrawlController(); 
+        if (cc==null) {
+            return -1L;
+        }
+        if (!cc.isPaused()) {
+        	cc.requestCrawlPause();
+        	return -2L;
+        }
+        Frontier f = cc.getFrontier();
+        if (f == null) {
+        	return -3L;
+        }
+        long pendingUrisCount = 0L;
+        boolean bLocked = exportLock.tryAcquire();
+        if (bLocked) {
+            try {
+            	File outFile = new File(getJobDir(), "pendingUris.txt");
+            	if (outFile.exists()) {
+            		outFile.delete();
+            	}
+                FileOutputStream out = new FileOutputStream(outFile);
+                OutputStreamWriter outStreamWriter = new OutputStreamWriter(out, StandardCharsets.UTF_8);
+                PrintWriter writer = new PrintWriter(new BufferedWriter(outStreamWriter, 65536));
+                pendingUrisCount = f.exportPendingUris(writer);
+                writer.close();
+                outStreamWriter.close();
+                out.close();
+            }
+            catch (IOException e) {
+                LOGGER.log(Level.SEVERE, e.getMessage(), e);
+            }
+            finally {
+            	exportLock.release();
+            }
+        }
+        else {
+        	return -4L;
+        }
+        return pendingUrisCount;
     }
 }//EOC

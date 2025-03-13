@@ -1,14 +1,11 @@
-/**
- * 
- */
 package org.archive.crawler.restlet;
 
 import java.io.StringWriter;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import javax.xml.bind.annotation.XmlRootElement;
-import javax.xml.bind.annotation.XmlType;
+import jakarta.xml.bind.annotation.XmlRootElement;
+import jakarta.xml.bind.annotation.XmlType;
 
 import junit.framework.TestCase;
 

@@ -31,6 +31,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.logging.Logger;
 
@@ -71,10 +72,6 @@ public abstract class JobRelatedResource extends BaseResource {
         }
     }
 
-    protected Engine getEngine() {
-        return ((EngineApplication)getApplication()).getEngine();
-    }
-
     /**
      * Starting at (and including) the given object, adds nested Map
      * representations of named beans to the {@code namedBeans} Collection. The
@@ -91,7 +88,11 @@ public abstract class JobRelatedResource extends BaseResource {
      */
     protected void addPresentableNestedNames(Collection<Object> namedBeans, Object obj,
             Set<Object> alreadyWritten) {
-        if (obj == null || alreadyWritten.contains(obj)
+        if (obj == null
+                || (obj instanceof Optional && !((Optional<?>) obj).isPresent())
+                || obj instanceof Class
+                || obj instanceof Logger
+                || alreadyWritten.contains(obj)
                 || obj.getClass().getName().startsWith("org.springframework.")) {
             return;
         }
@@ -235,7 +236,8 @@ public abstract class JobRelatedResource extends BaseResource {
             info.put("propValue", null);
             return info;
         }
-        if (object instanceof String || BeanUtils.isSimpleValueType(object.getClass()) || object instanceof File) {
+        if (object instanceof String || BeanUtils.isSimpleValueType(object.getClass()) || object instanceof File ||
+            object instanceof Logger) {
             info.put("class", object.getClass().getName());
             info.put("propValue", object);
             return info;
@@ -256,24 +258,6 @@ public abstract class JobRelatedResource extends BaseResource {
         info.put("class", object.getClass().getName());
 
         Collection<Object> properties = new LinkedList<Object>();
-        BeanWrapperImpl bwrap = new BeanWrapperImpl(object);
-        for (PropertyDescriptor pd : getPropertyDescriptors(bwrap)) {
-
-            if (pd.getReadMethod() != null && !pd.isHidden()) {
-                String propName = pd.getName();
-                if (beanPath != null) {
-                    beanPathPrefix = beanPath + ".";
-                }
-                Object propValue = makePresentableMapFor(propName, 
-                        bwrap.getPropertyValue(propName), 
-                        alreadyWritten, beanPathPrefix);
-                properties.add(propValue);
-            }
-        }
-        if (properties.size() > 0) {
-            info.put("properties", properties);
-        }
-        
         Collection<Object> propValues = new LinkedList<Object>();
         if(object.getClass().isArray()) {
         	// TODO: may want a special handling for an array of
@@ -287,8 +271,7 @@ public abstract class JobRelatedResource extends BaseResource {
                 propValues.add(makePresentableMapFor(i + "", Array.get(object, i),
                         alreadyWritten, beanPathPrefix));
             }
-        }
-        if (object instanceof List<?>) {
+        } else if (object instanceof List<?>) {
             List<?> list = (List<?>) object;
             for (int i = 0; i < list.size(); i++) {
                 if (beanPath != null) {
@@ -302,13 +285,7 @@ public abstract class JobRelatedResource extends BaseResource {
                     LOGGER.warning(list + ".get(" + i + ") -" + e);
                 }
             }
-        } else if (object instanceof Iterable<?>) {
-            for (Object next : (Iterable<?>) object) {
-                propValues.add(makePresentableMapFor("#", next, alreadyWritten,
-                        beanPathPrefix));
-            }
-        }
-        if (object instanceof Map<?,?>) {
+        } else if (object instanceof Map<?,?>) {
             for (Object next : ((Map<?,?>) object).entrySet()) {
                 // TODO: protect against giant maps?
                 Map.Entry<?, ?> entry = (Map.Entry<?, ?>) next;
@@ -318,8 +295,32 @@ public abstract class JobRelatedResource extends BaseResource {
                 propValues.add(makePresentableMapFor(entry.getKey().toString(),
                         entry.getValue(), alreadyWritten, beanPathPrefix));
             }
+        } else if (object instanceof Iterable<?>) {
+            for (Object next : (Iterable<?>) object) {
+                propValues.add(makePresentableMapFor("#", next, alreadyWritten,
+                        beanPathPrefix));
+            }
+        } else {
+            BeanWrapperImpl bwrap = new BeanWrapperImpl(object);
+            for (PropertyDescriptor pd : getPropertyDescriptors(bwrap)) {
+                if (pd.getReadMethod() != null && !pd.isHidden()) {
+                    String propName = pd.getName();
+                    if (beanPath != null) {
+                        beanPathPrefix = beanPath + ".";
+                    }
+                    Object propValue = makePresentableMapFor(propName,
+                            bwrap.getPropertyValue(propName),
+                            alreadyWritten, beanPathPrefix);
+                    properties.add(propValue);
+                }
+            }
         }
-        if (propValues.size() > 0) {
+
+        if (!properties.isEmpty()) {
+            info.put("properties", properties);
+        }
+
+        if (!propValues.isEmpty()) {
             info.put("propValue", propValues);
         }
 

@@ -23,6 +23,8 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,11 +33,16 @@ import java.util.logging.Logger;
 
 import org.apache.commons.io.FileUtils;
 import org.archive.util.ArchiveUtils;
-import org.archive.util.FilesystemLinkMaker;
 import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.BeanDefinitionStoreException;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.beans.factory.groovy.GroovyBeanDefinitionReader;
+import org.springframework.beans.factory.xml.XmlBeanDefinitionReader;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.annotation.AnnotationConfigUtils;
 import org.springframework.context.support.FileSystemXmlApplicationContext;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.EncodedResource;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.Errors;
 import org.springframework.validation.Validator;
@@ -45,9 +52,13 @@ import org.springframework.validation.Validator;
  * 
  * Notable extensions:
  * 
- * Remembers its primary XML configuration file, and can report its filesystem
+ * Remembers its primary configuration file, and can report its filesystem
  * path.
- * 
+ *
+ * Supports both Spring XML and Groovy Bean Definition DSL.
+ *
+ * Automatically enables annotation processing (&lt;context:annotation-config/&gt;).
+ *
  * Reports a summary of Errors collected from self-Validating Beans.
  * 
  * Generates launchId from timestamp, creates launch directory
@@ -67,18 +78,28 @@ public class PathSharingContext extends FileSystemXmlApplicationContext {
 
     public PathSharingContext(String configLocation) throws BeansException {
         super(configLocation);
+        init();
     }
     public PathSharingContext(String[] configLocations, ApplicationContext parent) throws BeansException {
         super(configLocations, parent);
+        init();
     }
     public PathSharingContext(String[] configLocations, boolean refresh, ApplicationContext parent) throws BeansException {
         super(configLocations, refresh, parent);
+        init();
     }
     public PathSharingContext(String[] configLocations, boolean refresh) throws BeansException {
         super(configLocations, refresh);
+        init();
     }
     public PathSharingContext(String[] configLocations) throws BeansException {
         super(configLocations);
+        init();
+    }
+
+    private void init() {
+        // enforce @Required annotation
+        addBeanFactoryPostProcessor(beanFactory -> beanFactory.addBeanPostProcessor(new RequiredAnnotationBeanPostProcessor()));
     }
 
     public String getPrimaryConfigurationPath() {
@@ -161,9 +182,10 @@ public class PathSharingContext extends FileSystemXmlApplicationContext {
             // attempt to symlink "latest" to launch dir
             File latestSymlink = new File(getConfigurationFile().getParentFile(), "latest");
             latestSymlink.delete();
-            boolean success = FilesystemLinkMaker.makeSymbolicLink(currentLaunchDir.getName(), latestSymlink.getPath());
-            if (!success) {
-                LOGGER.warning("failed to create symlink from " + latestSymlink + " to " + currentLaunchDir);
+            try {
+                Files.createSymbolicLink(latestSymlink.toPath(), Paths.get(currentLaunchDir.getName()));
+            } catch (IOException | UnsupportedOperationException e) {
+                LOGGER.log(Level.WARNING, "failed to create symlink from " + latestSymlink + " to " + currentLaunchDir, e);
             }
         } catch (IOException e) {
             LOGGER.log(Level.SEVERE, "failed to initialize launch directory: " + e);
@@ -198,5 +220,39 @@ public class PathSharingContext extends FileSystemXmlApplicationContext {
             data = new ConcurrentHashMap<Object, Object>();
         }
         return data;
+    }
+
+    /**
+     * Load bean definitions from XML or Groovy.
+     */
+    @Override
+    protected void loadBeanDefinitions(XmlBeanDefinitionReader xmlReader) throws BeansException, IOException {
+        // This is essentially <context:annotation-config/>
+        // By doing it here we don't need to include it in every crawl config.
+        AnnotationConfigUtils.registerAnnotationConfigProcessors(xmlReader.getRegistry());
+
+        GroovyBeanDefinitionReader groovyReader = new GroovyBeanDefinitionReader(xmlReader.getRegistry()) {
+            // By default, the Groovy reader loads XML from .xml and Groovy for everything else, but
+            // Heritrix uses .cxml so we override it to only use the Groovy reader for .groovy files
+            // and the XML reader for everything else.
+            @Override
+            public int loadBeanDefinitions(EncodedResource encodedResource) throws BeanDefinitionStoreException {
+                String filename = encodedResource.getResource().getFilename();
+                if (filename != null && filename.endsWith(".groovy")) {
+                    return super.loadBeanDefinitions(encodedResource);
+                }
+                return xmlReader.loadBeanDefinitions(encodedResource);
+            }
+        };
+        groovyReader.setEnvironment(getEnvironment());
+
+        Resource[] configResources = getConfigResources();
+        if (configResources != null) {
+            groovyReader.loadBeanDefinitions(configResources);
+        }
+        String[] configLocations = getConfigLocations();
+        if (configLocations != null) {
+            groovyReader.loadBeanDefinitions(configLocations);
+        }
     }
 }

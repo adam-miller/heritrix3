@@ -18,15 +18,9 @@
  */
 package org.archive.modules.recrawl;
 
-import java.text.DateFormat;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.archive.modules.CrawlURI;
 
 /**
@@ -36,8 +30,7 @@ import org.archive.modules.CrawlURI;
  *
  */
 public class FetchHistoryHelper {
-  private static final Log logger = LogFactory.getLog(FetchHistoryHelper.class);
-  /**
+    /**
    * key for storing timestamp in crawl history map.
    */
   public static final String A_TIMESTAMP = ".ts";
@@ -82,35 +75,7 @@ public class FetchHistoryHelper {
     return null;
   }
 
-  protected static final DateFormat HTTP_DATE_FORMAT = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz");
-
   protected FetchHistoryHelper() {
-  }
-
-  /**
-   * converts time in HTTP Date format {@code dateStr} to seconds
-   * since epoch. 
-   * @param dateStr time in HTTP Date format.
-   * @return seconds since epoch
-   */
-  public static long parseHttpDate(String dateStr) {
-      synchronized (HTTP_DATE_FORMAT) {
-          try {
-              Date d = HTTP_DATE_FORMAT.parse(dateStr);
-              return d.getTime() / 1000;
-          } catch (ParseException ex) {
-            if (logger.isDebugEnabled())
-              logger.debug("bad HTTP DATE: " + dateStr);
-              return 0;
-          }
-      }
-  }
-
-  public static String formatHttpDate(long time) {
-      synchronized (HTTP_DATE_FORMAT) {
-          // format(Date) is not thread safe either
-          return HTTP_DATE_FORMAT.format(new Date(time * 1000));
-      }
   }
 
 }

@@ -29,10 +29,10 @@ import javax.script.ScriptException;
 
 import org.apache.commons.io.IOUtils;
 import org.archive.io.ReadSource;
+import org.archive.spring.Required;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanInitializationException;
 import org.springframework.beans.factory.InitializingBean;
-import org.springframework.beans.factory.annotation.Required;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 
@@ -42,7 +42,7 @@ import org.springframework.context.ApplicationContextAware;
  * Script source may be provided via a file local to the crawler or
  * an inline configuration string. 
  * 
- * The source must include a function "run()" taking one argument. 
+ * The source must include a function "process()" taking one argument. 
  * Each processed CrawlURI is passed to this script function. 
  * 
  * Other variables available to the script include 'self' (this 
