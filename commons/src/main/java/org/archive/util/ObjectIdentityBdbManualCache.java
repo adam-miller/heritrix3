@@ -367,11 +367,16 @@ implements ObjectIdentityCache<V>, Closeable, Serializable {
 
     @Override
     public void dirtyKey(String key) {
-       V val = memMap.get(key);
-       if(val==null) {
-           logger.severe("dirty key not in memory should be impossible");
-       }
-       dirtyItems.put(key,val); 
+        V val = memMap.get(key);
+        if (val == null) {
+            val = diskMap.get(key);
+            if (val == null) {
+                logger.severe("dirty key not in memory or disk for key " + key + " should be impossible");
+                return;
+            }
+            memMap.putIfAbsent(key, val);
+        }
+        dirtyItems.put(key, val);
     }
 
     /*@Override
